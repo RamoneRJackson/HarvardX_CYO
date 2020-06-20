@@ -1,0 +1,588 @@
+---
+title: "Predicting the Onset of Diabetes Based on Diagnostic Measures"
+subtitle: "HarvardX Data Science: Capstone CYO Project"
+author: "Ramone Jackson"
+date: "6/20/2020"
+output: 
+  pdf_document: 
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+```
+
+```{r, include=FALSE, echo=FALSE}
+# Install all needed libraries if it is not present
+
+if(!require(tidyverse)) install.packages("tidyverse") 
+if(!require(kableExtra)) install.packages("kableExtra")
+if(!require(tidyr)) install.packages("tidyr")
+if(!require(tidyverse)) install.packages("tidyverse")
+if(!require(stringr)) install.packages("stringr")
+if(!require(ggplot2)) install.packages("ggplot2")
+if(!require(dplyr)) install.packages("dplyr")
+if(!require(caret)) install.packages("caret")
+if(!require(e1071)) install.packages("e1071")
+if(!require(class)) install.packages("class")
+if(!require(ROCR)) install.packages("ROCR")
+if(!require(randomForest)) install.packages("randomForest")
+if(!require(PRROC)) install.packages("PRROC")
+if(!require(reshape2)) install.packages("reshape2")
+if(!require(funModeling)) install.packages("funModeling")
+if(!require(corrplot)) install.packages("corrplot")
+if(!require(dplyr)) install.packages("dplyr")
+if(!require(gridExtra))install.packages("gridExtra")
+# Loading all needed libraries
+
+library(dplyr)
+library(tidyverse)
+library(kableExtra)
+library(tidyr)
+library(ggplot2)
+library(caret)
+library(e1071)
+library(class)
+library(ROCR)
+library(randomForest)
+library(PRROC)
+library(reshape2)
+library(funModeling)
+library(corrplot)
+```
+
+
+```{r, include=FALSE, echo=FALSE}
+library(dplyr)
+```
+
+\newpage
+
+# Introduction 
+
+Many persons from around the world are suffering from diabetes today. As such, I will be preparing a diagnostic system that will help to predict patients with diabetes. 
+
+For this project we will be using the diabetes dataset from [www.kaggle.com](https://www.kaggle.com/uciml/pima-indians-diabetes-database/data?select=diabetes.csv). This dataset consist of 9 variables and 768 rows of records. Also note that each row consists of a patient's data and there diabetes status.Here 1 represents having diabetes while 0 represents not having diabetes.
+
+The goal of this project is to find a good model hat could be use to predict if the patient has diabetes or not mased on the various measure. Since the doctors are focussing on Corona cases, it would help to diagnose patiemts easier to free up spaces for Corona patients in the hospital.
+
+
+To find a really good model to use, we have chosen to use accuray, f1 test and sensitivity to depict which model we should use. The model will be accepted if the aerage of all three matrics is greater than 70%. Lastly, the 5-fold cross-validation as our cross-validation method for assessing. 
+
+The definition of our matrics are below:
+
+* Accuracy - This indicates the number of outcomes that was currectly predicted by the model.
+* F1 score - This indicates the harmonic mean of precision and sensitivity.
+* Sensitivity - This indicates the proportion of people ‘with diabetes’ that were correctly classified.
+
+
+\newpage 
+
+# Methods
+
+
+## Data Exploration
+
+This dataset consists of 768 observations with 9 variables. Addionally, the dataset consist of 52 different ages were 268 patients have diabeeties and 500 does not. The top 6 of patients were: 22, 21, 25, 24, 23 and 28, which contributed to 39% of the overall patients. Therefore suggesting that there were many patients in their 20s. Lastly, The dataset also consited of 0 nulls
+
+**data dataset**
+
+```{r}
+## Loading the dataset from my github profile
+data <- read.csv("https://raw.githubusercontent.com/RamoneRJackson/HarvardX_CYO/master/datasets_228_482_diabetes.csv")
+
+#####Evaluating the Data
+
+#Finding the amount of observations and variables in the datset
+dim(data)
+
+
+#Viewing the datatypes of the variables in the dataset
+str(data)
+
+#Number of different ages in the dataset
+n_distinct(data$Age)
+
+#Checking to see the number of diabetes patients
+data%>%group_by(Outcome)%>%summarise(count=n())%>%
+   kable() %>%
+   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                 position = "center",
+                 font_size = 10,
+                 full_width = FALSE)
+
+
+#Finding out if there any data with N/As
+sapply(data, function(m){
+  sum(is.na(m))
+})%>%
+   kable() %>%
+   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                 position = "center",
+                 font_size = 10,
+                 full_width = FALSE)
+
+#Finding the top 6 ages represented in the dataset
+data%>%group_by(Age)%>%summarise(count=n())%>%
+  arrange(desc(count))%>%head(n=6)%>%
+   kable() %>%
+   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                 position = "center",
+                 font_size = 10,
+                 full_width = FALSE)
+
+#Top 6 ages of patients with diabetes
+data%>%filter(Outcome==1)%>%group_by(Age)%>%summarise(count=n())%>%
+  arrange(desc(count))%>%head(n=6)%>%
+   kable() %>%
+   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                 position = "center",
+                 font_size = 10,
+                 full_width = FALSE)
+
+#Viewing the first 6 rows of the dataset
+data%>%head(n=6)%>%
+   kable() %>%
+   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                 position = "center",
+                 font_size = 10,
+                 full_width = FALSE)
+
+```
+
+## Visualization
+
+### Age vs Density 
+
+This visualization shows that most of the persons chosen for the dataset aged between 20 and 40.
+
+```{r, echo=FALSE}
+data%>%ggplot( aes(Age)) + 
+  geom_histogram(aes(y = ..density..),binwidth = 1, colour = "black", fill = "white")+
+  geom_density(alpha = 0.2, fill = "#FF6666") + ggtitle("Age vs Density")
+```
+
+
+### Frequency between Outcomes
+
+The number of persons without diabetes in the dataset almost doubles the amount of person wth the disease.
+
+```{r, echo=FALSE}
+data %>%
+  ggplot(aes(Outcome, fill= Outcome)) +
+  theme_minimal()  +
+  geom_bar() +labs(title = "Frequency between Outcomes",
+       x = "Outcomes",
+       y = "Frequency")
+```
+
+### Plot on the distribution in variables 
+
+```{r, echo=FALSE}
+plot_num(data, bins=10)
+```
+
+### Correlation between variables
+
+There is no high level of correlation. Therefore all variables should be kept.
+
+```{r, echo=FALSE}
+corrMatrix <- cor(data)
+corrplot(corrMatrix, type = "upper", order = "hclust", 
+         tl.col = "blue",tl.cex = 1, addrect = 8)
+```
+
+## Data Cleaning
+
+1. Setting outcome to "yes" or "no"
+
+```{r}
+# Setting outcome as a character variable 
+data<- data%>%mutate(Outcome= 
+                         ifelse(Outcome ==1,"yes","no"))
+```
+
+2. Setting outcome as a factor
+
+```{r}
+data$Outcome <- as.factor(data$Outcome)
+```
+
+The data after cleaning 
+
+```{r}
+#Viewing the first 10 rows of the dataset
+data%>%head(n=10)%>%
+   kable() %>%
+   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                 position = "center",
+                 font_size = 10,
+                 full_width = FALSE)
+```
+
+
+
+\newpage 
+
+## Modeling 
+
+### Creation of Training set and Validation Set
+
+Firstly, we have chosen the 5-fold cross-validation as our cross-validation method for assessing the model's performance. Because there are not many records in the dataset, we ave chosen to split the data 25:75 with 25% going to the validation set and 75% going to the training set. This will allow us to have a good portion of our datst to train while allowing the a large enough valiation set to give reliable estimates.
+
+Before the split is done, we will set the seed to 1, then use the createDataPartition functin to help split the dataset for us. Additionally, we will create a function *"train.control"* to will be used to set the train controll as  5-fold cross-validation. Lastly, we will train our algorithm on the training set and use the validation set to predict and compute our apparent errors.
+
+```{r}
+# Split the dataset into train and test set
+# Set seed as a starting point
+
+set.seed(1, sample.kind='Rounding')
+train_index <- createDataPartition(y = data$Outcome, p = 0.25, list = F)
+
+training_set <- data[-train_index,]
+validation_set <- data[train_index,]
+
+
+#Showing the dimension of the training set      
+dim(training_set)   
+
+#Showing the dimension of the validation set      
+dim(validation_set)
+```
+
+```{r}
+# Set seed as a starting point
+set.seed(1, sample.kind='Rounding')
+
+# Defining the training control that will be used for the model
+
+train.control <- trainControl(method = "cv", #Cross Validation method
+                              classProbs = TRUE,
+                              number = 5,  #The number of folds
+                              summaryFunction = twoClassSummary)
+
+#Function to determine the avg of the average of the matrics
+Metrics_Avg <- function(f1_score, accuracy, sensitivity)
+  {
+     (f1_score + accuracy + sensitivity)/3 
+    }
+```
+
+```{r}
+ head(validation_set)%>%
+   kable() %>%
+   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                 position = "center",
+                 font_size = 10,
+                 full_width = FALSE)
+        
+```
+
+```{r}
+ head(training_set)%>%
+   kable() %>%
+   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                 position = "center",
+                 font_size = 10,
+                 full_width = FALSE)
+        
+```
+
+### Naive Guessing Mode
+
+This is a base case method that was chosen by assuming that if the Diabetes Pedigree Function is larger than 0.5 then the patient would have diabetes.
+
+```{r message=FALSE, echo=FALSE}
+
+# Set seed as a starting point
+set.seed(1, sample.kind='Rounding')
+predict_guess <- ifelse(validation_set$DiabetesPedigreeFunction >=
+                          0.5,"yes","no")
+predict_guess <- as.factor(predict_guess)
+
+# Calculating the confusion matrix
+confusion_matrix_guess <- confusionMatrix(predict_guess, validation_set$Outcome, positive = "yes")
+
+
+#Storing the values of both the Accuracy and sensitivity level for model
+Accuracy_guess <- confusion_matrix_guess$overall[['Accuracy']]
+Sensitivity_guess <- sensitivity(predict_guess, validation_set$Outcome, positive="yes")
+
+
+#Calculating F1 Score
+
+recall <- sensitivity(predict_guess, validation_set$Outcome, positive="yes")
+precision <- posPredValue(predict_guess, validation_set$Outcome, positive="yes")
+
+F1_Score_guess <- (2 * recall* precision) / (precision + recall)
+
+Metrics_Avg_guess <- Metrics_Avg(F1_Score_guess,Accuracy_guess, Sensitivity_guess )
+
+results <- data.frame(Model_Name="Naive Guessing Model", Accuracy =Accuracy_guess,
+                      F1_Score = F1_Score_guess,Sensitivity = Sensitivity_guess,
+                      Matric_Avg = Metrics_Avg_guess)
+
+```
+
+```{r}
+#Printing the results of our Model
+print(Accuracy_guess) 
+print(F1_Score_guess)
+print(Sensitivity_guess)
+```
+
+As you can see, that ths model does not meet the standard as all three measures are pretty low.
+
+
+### Naive Bayes QDA Model
+
+Naive Bayes classifiers are a family of probabilistic classifiers that make a very strong independence assumption about the data. In particular, naive Bayes classifiers assume that all X variables are independent. This strong assumption is rarely true, however, frequently leads to simple and effective classifiers. 
+
+For this project, e will be using the QDA version of the Naive  Bayes as 
+
+```{r message=FALSE, echo=FALSE}
+## Naive Bayes QDA Model
+
+set.seed(1, sample.kind='Rounding')
+
+fitting_qda<- train(Outcome ~., data = training_set , method = "qda",
+                    metric = "ROC",
+                    preProcess = c("scale", "center"),  # used to normalize the data
+                    trControl= train.control)
+
+
+# Predicting the patient disease status using the validation set
+predict_qda<- predict( fitting_qda, validation_set)
+
+# Calculating the confusion matrix
+confusion_matrix_qda <- confusionMatrix(predict_qda, validation_set$Outcome, positive = "yes")
+
+
+#Storing the Accuracy and sensitivity level for knn model
+Accuracy_qda <- confusion_matrix_qda$overall[['Accuracy']]
+Sensitivity_qda <- sensitivity(predict_qda, validation_set$Outcome, positive="yes")
+
+
+#Calculating F1 Score
+
+recall <- sensitivity(predict_qda, validation_set$Outcome, positive="yes")
+precision <- posPredValue(predict_qda, validation_set$Outcome, positive="yes")
+
+F1_Score_qda <- (2 * recall* precision) / (precision + recall)
+
+
+Metrics_Avg_qda <- Metrics_Avg(F1_Score_qda,Accuracy_qda, Sensitivity_qda )
+
+#Adding the result of this model to the results dataset
+results <- results %>% add_row(Model_Name="Naive Bayes QDA Model",
+                               Accuracy =Accuracy_qda,
+                               F1_Score = F1_Score_qda,
+                               Sensitivity = Sensitivity_qda,
+                               Matric_Avg = Metrics_Avg_qda)
+```
+
+```{r}
+#Printing the results of our Model
+print(Accuracy_qda) 
+print(F1_Score_qda)
+print(Sensitivity_qda)
+```
+
+This model is still not as good as we would like it to be.
+
+### K-Nearest Neighbors Model
+
+K-nearest neighbors (kNN) estimates the conditional probabilities in a similar way to bin smoothing. However, kNN is easier to adapt to multiple dimensions.
+
+```{r message=FALSE, echo=FALSE}
+##K-nearest neighbors (kNN) Model
+
+set.seed(1, sample.kind='Rounding')
+
+fitting_knn<- train(Outcome ~., data = training_set , method = "knn",
+                metric = "ROC",
+                preProcess = c("scale", "center"),  # used to normalize the data
+                trControl= train.control,
+                tuneLength=10)
+
+
+# Predicting the patient disease status using the validation set
+predict_knn<- predict( fitting_knn, validation_set)
+
+# Calculating the confusion matrix
+confusion_matrix_knn <- confusionMatrix(predict_knn, validation_set$Outcome, positive = "yes")
+
+
+#Storing the Accuracy and sensitivity level for knn model
+Accuracy_knn <- confusion_matrix_knn$overall[['Accuracy']]
+Sensitivity_knn <- sensitivity(predict_knn, validation_set$Outcome, positive="yes")
+
+
+#Calculating F1 Score
+
+recall <- sensitivity(predict_knn, validation_set$Outcome, positive="yes")
+precision <- posPredValue(predict_knn, validation_set$Outcome, positive="yes")
+
+F1_Score_knn <- (2 * recall* precision) / (precision + recall)
+
+
+Metrics_Avg_knn <- Metrics_Avg(F1_Score_knn,Accuracy_knn, Sensitivity_knn )
+
+#Adding the result of this model to the results dataset
+results <- results %>% add_row(Model_Name="K-nearest neighbors Model",
+                               Accuracy =Accuracy_knn,
+                               F1_Score = F1_Score_knn,
+                               Sensitivity = Sensitivity_knn,
+                               Matric_Avg = Metrics_Avg_knn)
+```
+
+
+```{r}
+#Printing the results of our Model
+print(Accuracy_knn) 
+print(F1_Score_knn)
+print(Sensitivity_knn)
+
+```
+
+The accurcy for this modl was good but we could increase both the F1 Score and the Sensitivity some more.
+
+### Logistic Regression Model
+
+Logistic regression is an extension of linear regression that assures that the estimate of conditional probability is between 0 and 1. Note that with this model, we can no longer use least squares. Instead we compute the maximum likelihood estimate (MLE). 
+
+In R, we can fit the logistic regression model with the function glm() (generalized linear models). In order to use this function, we would have to use the family function to specify the binomial version of this model.  
+
+```{r message=FALSE, echo=FALSE}
+
+## Logistic Regression Model
+
+set.seed(1, sample.kind='Rounding')
+
+fitting_glm<- train(Outcome ~., data = training_set , method = "glm",
+                metric = "ROC",
+                preProcess = c("scale", "center"),  # used to normalize the data
+                trControl= train.control,
+                family = "binomial")
+
+# Predicting the patient disease status using the validation set
+predict_glm<- predict( fitting_glm, validation_set)
+
+# Calculating the confusion matrix
+confusion_matrix_glm <- confusionMatrix(predict_glm, validation_set$Outcome, positive = "yes")
+
+
+#Storing the values of both the Accuracy and sensitivity level for lm model
+Accuracy_glm <- confusion_matrix_glm$overall[['Accuracy']]
+Sensitivity_glm <- sensitivity(predict_glm, validation_set$Outcome, positive="yes")
+
+
+#Calculating F1 Score
+
+recall <- sensitivity(predict_glm, validation_set$Outcome, positive="yes")
+precision <- posPredValue(predict_glm, validation_set$Outcome, positive="yes")
+
+F1_Score_glm <- (2 * recall* precision) / (precision + recall)
+
+
+
+Metrics_Avg_glm <- Metrics_Avg(F1_Score_glm,Accuracy_glm, Sensitivity_glm )
+
+#Adding the result of this model to the results dataset
+results <- results %>% add_row(Model_Name="Logistic Regression Model",
+                               Accuracy =Accuracy_glm,
+                               F1_Score = F1_Score_glm,
+                               Sensitivity = Sensitivity_glm,
+                               Matric_Avg = Metrics_Avg_glm)
+```
+
+```{r}
+#Printing the results of our GLM Model
+print(Accuracy_glm) 
+print(F1_Score_glm)
+print(Sensitivity_glm)
+```
+
+Even though this model is not that bad, we can still get an even better model.
+
+
+### Random Forrest Model
+
+Ths is a well known machine learning approach that solves the errors from the decision tree. In rain forest, the whole dataset is not required for making a splitting decision. Only some aggregated information is required and to increase the effeciency of both the F1 Score and the sensitivity, we will tune the model to 7.
+
+```{r message=FALSE, echo=FALSE}
+## Random Forrest Model
+
+set.seed(1, sample.kind='Rounding')
+
+fitting_rf<- train(Outcome ~., data = training_set , method = "rf",
+                    metric = "ROC",
+                    preProcess = c("scale", "center"),  # used to normalize the data
+                    trControl= train.control, tuneLength=7)
+
+
+# Predicting the patient disease status using the validation set
+predict_rf<- predict( fitting_rf, validation_set)
+
+# Calculating the confusion matrix
+confusion_matrix_rf <- confusionMatrix(predict_rf, validation_set$Outcome, positive = "yes")
+
+
+#Storing the Accuracy and sensitivity level for knn model
+Accuracy_rf <- confusion_matrix_rf$overall[['Accuracy']]
+Sensitivity_rf <- sensitivity(predict_rf, validation_set$Outcome, positive="yes")
+
+
+#Calculating F1 Score
+
+recall <- sensitivity(predict_rf, validation_set$Outcome, positive="yes")
+precision <- posPredValue(predict_rf, validation_set$Outcome, positive="yes")
+
+F1_Score_rf <- (2 * recall* precision) / (precision + recall)
+
+
+Metrics_Avg_rf <- Metrics_Avg(F1_Score_rf,Accuracy_rf, Sensitivity_rf )
+
+#Adding the result of this model to the results dataset
+results <- results %>% add_row(Model_Name="Random Forrest Model",
+                               Accuracy =Accuracy_rf,
+                               F1_Score = F1_Score_rf,
+                               Sensitivity = Sensitivity_rf,
+                               Matric_Avg = Metrics_Avg_rf)
+```
+
+```{r}
+
+#Printing the results of our  Model
+print(Accuracy_rf) 
+print(F1_Score_rf)
+print(Sensitivity_rf)
+```
+
+This is a really good model to use to fit the data, as such, we will stop here.
+
+\newpage
+# Result
+
+This is the summary results for all the model built, that were trained on training set and validation on the test set.
+
+```{r}
+results%>%
+   kable() %>%
+   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                 position = "center",
+                 font_size = 10,
+                 full_width = FALSE)
+```
+
+As expectd, the worst overall model was our Naive Guessing Model, followed by the Naive Bayes Model. Even though the Naive Bayes Model had a higher the K-Nearest Neighbors Model, its overall average of the three metrics was still lower than the K-Nearest Neighbors Model. The Logistic Regression Model was the second best model however, the avg of the matric did not reach the 70% acceptance level.
+
+From our results, it is safe to say that the Random Forrest Model is a good model to predict if the patient has diabeties as it gives a good passing grade for all three of our metrics.
+
+# Conclusion
+
+In conclusion, after fitting various models on  the data, the best model would have been Random Forrest Model. 
+
+There were minimal limitation since the data was partially clean. However, the distribution of ages could have been sbreaded out more since most of the patients were in their 20s.
+
+In the future, I would recoment havng a datset with a better mix in ages.
